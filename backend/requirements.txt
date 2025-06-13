@@ -1,0 +1,7 @@
+# File: backend/requirements.txt
+flask
+flask-cors
+tensorflow
+numpy
+pillow
+gunicorn

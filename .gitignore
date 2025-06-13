@@ -1,0 +1,32 @@
+# Node.js (for Next.js frontend)
+node_modules/
+.next/
+out/
+dist/
+.env.local
+.env*
+
+# Python (for Flask backend)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+ENV/
+.Python
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+*.sqlite
+*.db
+
+# VSCode settings
+.vscode/
+
+# Render config cache (if needed)
+render.yaml.lock
