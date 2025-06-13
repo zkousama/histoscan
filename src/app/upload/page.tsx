@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @next/next/no-img-element */
 "use client"
 import { useState, useEffect, useRef } from "react"
@@ -175,18 +176,46 @@ export default function UploadPage() {
       const { data: publicUrlData } = supabase.storage.from("images").getPublicUrl(filePath)
       const imageUrl = publicUrlData.publicUrl
 
-      // 3. Make prediction request
+      // 3. Make prediction request with proper CORS handling
       const formData = new FormData()
       formData.append("image", file)
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/predict`, {
-        method: "POST",
-        body: formData,
-      })
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://histoscan.onrender.com"
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Prediction API error: ${response.status} - ${errorText}`)
+      // Add retry logic for the API call
+      let retries = 3
+      let response = null
+      let lastError = null
+
+      while (retries > 0 && !response) {
+        try {
+          response = await fetch(`${apiUrl}/predict`, {
+            method: "POST",
+            body: formData,
+            // Add explicit CORS mode
+            mode: "cors",
+            headers: {
+              // Don't set Content-Type with FormData as browser will set it with boundary
+              Accept: "application/json",
+            },
+          })
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`API error: ${response.status} - ${errorText || "Unknown error"}`)
+          }
+
+          break
+        } catch (err: any) {
+          lastError = err
+          retries--
+          // Wait before retrying (exponential backoff)
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (3 - retries)))
+        }
+      }
+
+      if (!response || !response.ok) {
+        throw new Error(lastError?.message || "Failed to connect to the prediction API after multiple attempts")
       }
 
       const result = await response.json()
@@ -232,7 +261,8 @@ export default function UploadPage() {
       router.push("/result")
     } catch (err) {
       console.error("Upload process error:", err)
-      setError(err instanceof Error ? err.message : "An unexpected error occurred")
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }

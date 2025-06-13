@@ -5,22 +5,24 @@ import time
 import os
 import gc
 import psutil
+import traceback
 
 app = Flask(__name__)
 
-# Configure CORS more explicitly
+# Configure CORS properly - allow all origins for development
 CORS(app, 
-     origins=["https://histoscan.vercel.app", "http://localhost:3000", "*"],
+     origins=["*"],  # Allow all origins
      methods=["GET", "POST", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
-     supports_credentials=False)
+     supports_credentials=False,
+     max_age=3600)  # Cache preflight requests for 1 hour
 
 @app.after_request
 def after_request(response):
     """Add CORS headers to all responses"""
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization,Access-Control-Allow-Origin"
-    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Max-Age"] = "3600"
     return response
 
@@ -38,6 +40,7 @@ def load_predict_functions():
             health_check = hc
         except Exception as e:
             print(f"Error loading predict functions: {e}")
+            traceback.print_exc()
             raise
 
 @app.route("/", methods=["GET"])
@@ -57,11 +60,7 @@ def home():
 def predict():
     # Handle preflight OPTIONS request
     if request.method == "OPTIONS":
-        response = jsonify({"status": "ok"})
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return response
+        return "", 200  # Return empty response with 200 OK for OPTIONS
     
     # Check memory before processing
     memory_percent = psutil.virtual_memory().percent
@@ -109,26 +108,22 @@ def predict():
         gc.collect()
         error_msg = f"Prediction failed: {str(e)}"
         print(f"ERROR: {error_msg}")
+        traceback.print_exc()  # Print full traceback for debugging
         return jsonify({"error": error_msg}), 500
 
 @app.route("/health", methods=["GET"])
 def health():
     try:
-        load_predict_functions()
-        model_status = health_check()
-        
-        # Add memory info to health check
+        # Don't load the model for health check to save memory
+        # Just check if the server is running
         memory_info = psutil.virtual_memory()
-        model_status.update({
-            "memory_usage_percent": memory_info.percent,
-            "memory_available_gb": memory_info.available / (1024**3),
-            "memory_total_gb": memory_info.total / (1024**3)
-        })
         
         return jsonify({
             "status": "healthy", 
             "message": "Backend is running",
-            **model_status
+            "memory_usage_percent": memory_info.percent,
+            "memory_available_gb": memory_info.available / (1024**3),
+            "memory_total_gb": memory_info.total / (1024**3)
         })
     except Exception as e:
         return jsonify({
