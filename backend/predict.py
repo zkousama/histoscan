@@ -5,30 +5,61 @@ import logging
 import gc
 from PIL import Image
 import io
+import psutil
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Defer TensorFlow import to reduce memory usage
-import tensorflow as tf
-# Configure TensorFlow for memory efficiency
-tf.config.experimental.enable_memory_growth = True
-tf.config.set_visible_devices([], 'GPU')  # Force CPU usage on free tier
+# Global variables
+model = None
+tf = None
+load_model = None
 
-from tensorflow.keras.models import load_model
+def lazy_load_tensorflow():
+    """Lazy load TensorFlow to reduce memory usage"""
+    global tf, load_model
+    if tf is None:
+        import tensorflow as tf_module
+        tf = tf_module
+        
+        # Configure TensorFlow for memory efficiency
+        tf.config.experimental.enable_memory_growth = True
+        tf.config.set_visible_devices([], 'GPU')  # Force CPU usage
+        
+        # Set memory limit if possible
+        try:
+            physical_devices = tf.config.list_physical_devices('CPU')
+            if physical_devices:
+                tf.config.experimental.set_memory_growth(physical_devices[0], True)
+        except Exception as e:
+            logger.warning(f"Could not set memory growth: {e}")
+        
+        from tensorflow.keras.models import load_model as lm
+        load_model = lm
 
-# Fix the model path - remove 'backend/' prefix since we're already in backend directory
+# Model configuration
 MODEL_PATH = os.getenv("MODEL_PATH", "model/best_cancer_model_small.h5")
 IMAGE_SIZE = (100, 100)
 
-# Global model variable
-model = None
+def check_memory():
+    """Check available memory"""
+    memory = psutil.virtual_memory()
+    return memory.percent < 90
 
 def load_model_safely():
     """Load model with better error handling and memory management"""
     global model
+    
+    if not check_memory():
+        logger.warning("Low memory detected, forcing garbage collection")
+        gc.collect()
+        if not check_memory():
+            raise Exception("Insufficient memory to load model")
+    
     try:
+        lazy_load_tensorflow()
+        
         # Check multiple possible paths
         possible_paths = [
             MODEL_PATH,
@@ -48,7 +79,7 @@ def load_model_safely():
             model = load_model(model_path, compile=False)
             logger.info(f"Model loaded successfully from {model_path}")
             
-            # Force garbage collection
+            # Force garbage collection after loading
             gc.collect()
             return True
         else:
@@ -69,10 +100,9 @@ def load_model_safely():
     except Exception as e:
         logger.error(f"Error loading model: {e}")
         model = None
+        # Clean up on error
+        gc.collect()
         return False
-
-# Try to load model when module is imported
-load_model_safely()
 
 def predict_image(img_file):
     """
@@ -85,6 +115,12 @@ def predict_image(img_file):
         dict: Prediction results
     """
     global model
+    
+    # Check memory before processing
+    if not check_memory():
+        gc.collect()
+        if not check_memory():
+            raise Exception("Insufficient memory for prediction")
     
     # Try to load model if not already loaded
     if model is None:
@@ -119,14 +155,16 @@ def predict_image(img_file):
         
         # Make prediction with memory optimization
         try:
+            lazy_load_tensorflow()
             with tf.device('/CPU:0'):  # Force CPU usage
                 prediction = model.predict(img_array, verbose=0, batch_size=1)[0][0]
         except Exception as pred_error:
             logger.error(f"Prediction error: {pred_error}")
             raise Exception(f"Model prediction failed: {str(pred_error)}")
         finally:
-            # Clean up memory
+            # Clean up memory immediately
             del img_array
+            del img
             gc.collect()
         
         # Determine status and confidence
@@ -140,10 +178,16 @@ def predict_image(img_file):
         }
         
         logger.info(f"Prediction completed: {result['status']} ({result['confidence']:.2f}%)")
+        
+        # Final cleanup
+        gc.collect()
+        
         return result
         
     except Exception as e:
         logger.error(f"Error in predict_image: {e}")
+        # Clean up on error
+        gc.collect()
         raise Exception(f"Image prediction failed: {str(e)}")
 
 def health_check():
@@ -165,12 +209,20 @@ def health_check():
     
     model_exists = any(os.path.exists(path) for path in possible_paths)
     
+    # Memory information
+    memory = psutil.virtual_memory()
+    
     return {
         "model_loaded": model_loaded,
         "model_path": MODEL_PATH,
         "model_exists": model_exists,
         "image_size": IMAGE_SIZE,
         "current_dir": os.getcwd(),
-        "tensorflow_version": tf.__version__,
-        "checked_paths": possible_paths
+        "tensorflow_version": tf.__version__ if tf else "Not loaded",
+        "checked_paths": possible_paths,
+        "memory_available": memory.available / (1024**3),  # GB
+        "memory_percent": memory.percent
     }
+
+# Don't load model on import to save memory
+# Model will be loaded on first prediction request
