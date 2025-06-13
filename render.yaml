@@ -13,4 +13,4 @@ services:
       - key: PYTHON_VERSION
         value: "3.10.13"
       - key: MODEL_PATH
-        value: "backend/model/best_cancer_model_small.h5"
+        value: "model/best_cancer_model_small.h5"

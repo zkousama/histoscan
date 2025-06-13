@@ -18,7 +18,8 @@ tf.config.set_visible_devices([], 'GPU')  # Force CPU usage on free tier
 
 from tensorflow.keras.models import load_model
 
-MODEL_PATH = os.getenv("MODEL_PATH", "backend/model/best_cancer_model_small.h5")
+# Fix the model path - remove 'backend/' prefix since we're already in backend directory
+MODEL_PATH = os.getenv("MODEL_PATH", "model/best_cancer_model_small.h5")
 IMAGE_SIZE = (100, 100)
 
 # Global model variable
@@ -28,22 +29,38 @@ def load_model_safely():
     """Load model with better error handling and memory management"""
     global model
     try:
-        if os.path.exists(MODEL_PATH):
+        # Check multiple possible paths
+        possible_paths = [
+            MODEL_PATH,
+            "model/best_cancer_model_small.h5",
+            "backend/model/best_cancer_model_small.h5",
+            os.path.join(os.getcwd(), "model/best_cancer_model_small.h5")
+        ]
+        
+        model_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                model_path = path
+                break
+        
+        if model_path:
             # Load model with memory optimization
-            model = load_model(MODEL_PATH, compile=False)
-            logger.info(f"Model loaded successfully from {MODEL_PATH}")
+            model = load_model(model_path, compile=False)
+            logger.info(f"Model loaded successfully from {model_path}")
             
             # Force garbage collection
             gc.collect()
             return True
         else:
-            logger.error(f"Model file not found at {MODEL_PATH}")
+            logger.error(f"Model file not found in any of these locations: {possible_paths}")
             # List available files for debugging
             current_dir = os.getcwd()
             logger.info(f"Current directory: {current_dir}")
             logger.info(f"Files in current directory: {os.listdir('.')}")
             
-            if os.path.exists("backend"):
+            if os.path.exists("model"):
+                logger.info(f"Files in model directory: {os.listdir('model')}")
+            elif os.path.exists("backend"):
                 logger.info(f"Files in backend: {os.listdir('backend')}")
                 if os.path.exists("backend/model"):
                     logger.info(f"Files in backend/model: {os.listdir('backend/model')}")
@@ -139,11 +156,21 @@ def health_check():
     else:
         model_loaded = True
     
+    # Check if model file exists in any of the possible locations
+    possible_paths = [
+        MODEL_PATH,
+        "model/best_cancer_model_small.h5",
+        "backend/model/best_cancer_model_small.h5"
+    ]
+    
+    model_exists = any(os.path.exists(path) for path in possible_paths)
+    
     return {
         "model_loaded": model_loaded,
         "model_path": MODEL_PATH,
-        "model_exists": os.path.exists(MODEL_PATH),
+        "model_exists": model_exists,
         "image_size": IMAGE_SIZE,
         "current_dir": os.getcwd(),
-        "tensorflow_version": tf.__version__
+        "tensorflow_version": tf.__version__,
+        "checked_paths": possible_paths
     }
