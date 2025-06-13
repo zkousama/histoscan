@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react/no-unescaped-entities */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @next/next/no-img-element */
 "use client"
 import { useState, useEffect, useRef } from "react"
@@ -48,23 +47,11 @@ export default function UploadPage() {
     age: "",
   })
   const [loading, setLoading] = useState(false)
-  const [processingProgress, setProcessingProgress] = useState(0)
-  const processingInterval = useRef<NodeJS.Timeout | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
-  const [anonymized, setAnonymized] = useState(true)
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
-
-  // Clean up interval on unmount
-  useEffect(() => {
-    return () => {
-      if (processingInterval.current) {
-        clearInterval(processingInterval.current)
-      }
-    }
-  }, [])
 
   // Fetch existing patients on component mount
   useEffect(() => {
@@ -152,47 +139,6 @@ export default function UploadPage() {
     })
   }
 
-  // Function to make API call with fetch and better error handling
-  const callPredictionAPI = async (formData: FormData, apiUrl: string): Promise<PredictionResponse> => {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 120000) // 2 minute timeout
-
-    try {
-      const response = await fetch(`${apiUrl}/predict`, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      })
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status} - ${response.statusText || "Unknown error"}`)
-      }
-
-      const data = await response.json()
-      return data as PredictionResponse
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error("Request timed out")
-      }
-      throw error
-    } finally {
-      clearTimeout(timeoutId)
-    }
-  }
-
-  // Fallback to mock data if API fails
-  const getMockPrediction = (): PredictionResponse => {
-    const isCancer = Math.random() > 0.7
-    const confidence = 75 + Math.random() * 20
-
-    return {
-      status: isCancer ? "Cancer" : "No Cancer",
-      confidence: isCancer ? confidence : 100 - confidence,
-      cancer_probability: isCancer ? confidence : 100 - confidence,
-      note: "Mock data due to API failure",
-    }
-  }
-
   const handleSubmit = async () => {
     const currentPatientId = activeTab === "new" ? patientData.patient_id : selectedPatient?.patient_id
 
@@ -208,22 +154,6 @@ export default function UploadPage() {
 
     setLoading(true)
     setError(null)
-    setProcessingProgress(0)
-
-    // Start progress animation
-    if (processingInterval.current) {
-      clearInterval(processingInterval.current)
-    }
-
-    processingInterval.current = setInterval(() => {
-      setProcessingProgress((prev) => {
-        // Slowly increase up to 95%
-        if (prev < 95) {
-          return prev + (95 - prev) / 50
-        }
-        return prev
-      })
-    }, 500)
 
     try {
       // Check if user is authenticated
@@ -261,30 +191,55 @@ export default function UploadPage() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://histoscan.onrender.com"
 
       // Add retry logic for the API call
-      let retries = 2
+      let retries = 3
       let response: PredictionResponse | null = null
       let lastError = null
 
-      while (retries >= 0 && !response) {
+      while (retries > 0 && !response) {
         try {
-          // Use the new API call function
-          response = await callPredictionAPI(formData, apiUrl)
+          // Use XMLHttpRequest instead of fetch for better CORS handling
+          response = await new Promise<PredictionResponse>((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+            xhr.open("POST", `${apiUrl}/predict`, true)
+            xhr.setRequestHeader("Accept", "application/json")
+
+            xhr.onload = function () {
+              if (this.status >= 200 && this.status < 300) {
+                try {
+                  const responseData = JSON.parse(xhr.response) as PredictionResponse
+                  resolve(responseData)
+                } catch (parseError) {
+                  reject(new Error(`Failed to parse response: ${parseError}`))
+                }
+              } else {
+                reject(new Error(`API error: ${this.status} - ${xhr.statusText || "Unknown error"}`))
+              }
+            }
+
+            xhr.onerror = () => {
+              reject(new Error("Network error occurred"))
+            }
+
+            xhr.ontimeout = () => {
+              reject(new Error("Request timed out"))
+            }
+
+            xhr.timeout = 30000 // 30 seconds timeout
+            xhr.send(formData)
+          })
+
           break
-        } catch (err) {
+        } catch (err: any) {
           lastError = err
           retries--
-          console.error(`API call attempt failed (${2 - retries}/2):`, err)
+          console.error(`API call attempt failed (${3 - retries}/3):`, err)
           // Wait before retrying (exponential backoff)
-          if (retries >= 0) {
-            await new Promise((resolve) => setTimeout(resolve, 2000 * (2 - retries)))
-          }
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (3 - retries)))
         }
       }
 
-      // If all API calls fail, use mock data instead of failing completely
       if (!response) {
-        console.warn("All API calls failed, using mock data")
-        response = getMockPrediction()
+        throw new Error(lastError?.message || "Failed to connect to the prediction API after multiple attempts")
       }
 
       // 4. Save result to database
@@ -325,23 +280,12 @@ export default function UploadPage() {
           consultation_date: format(consultationDate, "yyyy-MM-dd"),
         }),
       )
-
-      // Set progress to 100% before redirecting
-      setProcessingProgress(100)
-
-      // Small delay before redirect for better UX
-      setTimeout(() => {
-        router.push("/result")
-      }, 500)
+      router.push("/result")
     } catch (err) {
       console.error("Upload process error:", err)
       const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
       setError(errorMessage)
     } finally {
-      if (processingInterval.current) {
-        clearInterval(processingInterval.current)
-        processingInterval.current = null
-      }
       setLoading(false)
     }
   }
@@ -481,19 +425,6 @@ export default function UploadPage() {
                 </div>
               </TabsContent>
             </Tabs>
-
-            <div className="flex items-center space-x-2 pt-4 mt-4 border-t">
-              <input
-                type="checkbox"
-                id="anonymized"
-                checked={anonymized}
-                onChange={(e) => setAnonymized(e.target.checked)}
-                className="rounded border-slate-300"
-              />
-              <Label htmlFor="anonymized" className="text-sm">
-                Données anonymisées
-              </Label>
-            </div>
           </StyledCard>
 
           {/* Image Upload with Drag & Drop */}
@@ -569,19 +500,6 @@ export default function UploadPage() {
               <>Lancer l&apos;analyse</>
             )}
           </Button>
-
-          {/* Processing progress bar */}
-          {loading && (
-            <div className="mt-4 w-full max-w-md mx-auto">
-              <div className="bg-gray-200 rounded-full h-2.5">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
-                  style={{ width: `${processingProgress}%` }}
-                ></div>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">L'analyse peut prendre jusqu'à 2 minutes</p>
-            </div>
-          )}
         </div>
       </PageContainer>
     </>
