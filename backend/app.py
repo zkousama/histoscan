@@ -84,7 +84,8 @@ def home():
             "/health": "GET - Health check",
             "/predict": "POST - Image prediction",
             "/memory": "GET - Memory status",
-            "/check-model": "GET - Check model file existence"
+            "/check-model": "GET - Check model file existence",
+            "/upload-model": "POST - Temporary endpoint to upload model file"
         }
     })
 
@@ -235,6 +236,31 @@ def check_model():
             "possible_paths": possible_paths,
             "found_paths": found_paths,
             "directories": directories
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/upload-model", methods=["POST"])
+def upload_model():
+    """Temporary endpoint to upload model file"""
+    if "model" not in request.files:
+        return jsonify({"error": "No model file provided"}), 400
+
+    file = request.files["model"]
+    
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+
+    # Save the file to the model directory
+    os.makedirs("model", exist_ok=True)
+    model_path = os.path.join("model", "best_cancer_model_small.h5")
+    
+    try:
+        file.save(model_path)
+        return jsonify({
+            "success": True,
+            "message": f"Model saved to {model_path}",
+            "file_size": os.path.getsize(model_path)
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
