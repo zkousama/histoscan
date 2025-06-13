@@ -9,3 +9,5 @@ services:
         value: https://sdtnxvgofugmiouvchtf.supabase.co
       - key: SUPABASE_KEY
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkdG54dmdvZnVnbWlvdXZjaHRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NjAwMDQsImV4cCI6MjA2NTMzNjAwNH0.ulKFXnzm0HHaQ3pY_A-uToAUrNytyo7xaE42BV4D5kM
+      - key: PYTHON_VERSION
+        value: "3.10.13"
