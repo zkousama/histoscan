@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react/no-unescaped-entities */
 /* eslint-disable @next/next/no-img-element */
 "use client"
 import { useState, useEffect, useRef } from "react"
@@ -47,12 +48,23 @@ export default function UploadPage() {
     age: "",
   })
   const [loading, setLoading] = useState(false)
+  const [processingProgress, setProcessingProgress] = useState(0)
+  const processingInterval = useRef<NodeJS.Timeout | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [anonymized, setAnonymized] = useState(true)
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
+
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => {
+      if (processingInterval.current) {
+        clearInterval(processingInterval.current)
+      }
+    }
+  }, [])
 
   // Fetch existing patients on component mount
   useEffect(() => {
@@ -143,14 +155,13 @@ export default function UploadPage() {
   // Function to make API call with fetch and better error handling
   const callPredictionAPI = async (formData: FormData, apiUrl: string): Promise<PredictionResponse> => {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 120000) // 2 minute timeout
 
     try {
       const response = await fetch(`${apiUrl}/predict`, {
         method: "POST",
         body: formData,
         signal: controller.signal,
-        // Don't set mode: 'cors' - let the browser handle it
       })
 
       if (!response.ok) {
@@ -197,6 +208,22 @@ export default function UploadPage() {
 
     setLoading(true)
     setError(null)
+    setProcessingProgress(0)
+
+    // Start progress animation
+    if (processingInterval.current) {
+      clearInterval(processingInterval.current)
+    }
+
+    processingInterval.current = setInterval(() => {
+      setProcessingProgress((prev) => {
+        // Slowly increase up to 95%
+        if (prev < 95) {
+          return prev + (95 - prev) / 50
+        }
+        return prev
+      })
+    }, 500)
 
     try {
       // Check if user is authenticated
@@ -234,11 +261,11 @@ export default function UploadPage() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://histoscan.onrender.com"
 
       // Add retry logic for the API call
-      let retries = 3
+      let retries = 2
       let response: PredictionResponse | null = null
       let lastError = null
 
-      while (retries > 0 && !response) {
+      while (retries >= 0 && !response) {
         try {
           // Use the new API call function
           response = await callPredictionAPI(formData, apiUrl)
@@ -246,9 +273,11 @@ export default function UploadPage() {
         } catch (err) {
           lastError = err
           retries--
-          console.error(`API call attempt failed (${3 - retries}/3):`, err)
+          console.error(`API call attempt failed (${2 - retries}/2):`, err)
           // Wait before retrying (exponential backoff)
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (3 - retries)))
+          if (retries >= 0) {
+            await new Promise((resolve) => setTimeout(resolve, 2000 * (2 - retries)))
+          }
         }
       }
 
@@ -296,12 +325,23 @@ export default function UploadPage() {
           consultation_date: format(consultationDate, "yyyy-MM-dd"),
         }),
       )
-      router.push("/result")
+
+      // Set progress to 100% before redirecting
+      setProcessingProgress(100)
+
+      // Small delay before redirect for better UX
+      setTimeout(() => {
+        router.push("/result")
+      }, 500)
     } catch (err) {
       console.error("Upload process error:", err)
       const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
       setError(errorMessage)
     } finally {
+      if (processingInterval.current) {
+        clearInterval(processingInterval.current)
+        processingInterval.current = null
+      }
       setLoading(false)
     }
   }
@@ -529,6 +569,19 @@ export default function UploadPage() {
               <>Lancer l&apos;analyse</>
             )}
           </Button>
+
+          {/* Processing progress bar */}
+          {loading && (
+            <div className="mt-4 w-full max-w-md mx-auto">
+              <div className="bg-gray-200 rounded-full h-2.5">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${processingProgress}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">L'analyse peut prendre jusqu'à 2 minutes</p>
+            </div>
+          )}
         </div>
       </PageContainer>
     </>

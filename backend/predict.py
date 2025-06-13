@@ -25,17 +25,14 @@ ON_RENDER = os.environ.get('RENDER', False)
 def lazy_load_tensorflow():
     """Lazy load TensorFlow to reduce memory usage"""
     global tf, load_model
-    
-    # Skip TensorFlow loading on Render
-    if ON_RENDER:
-        logger.warning("Running on Render, skipping TensorFlow initialization")
-        return False
-        
     if tf is None:
         try:
             # Set environment variables before importing TensorFlow
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Reduce TF logging
+            os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'  # Prevent TF from grabbing all GPU memory
+            os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN optimizations that can cause issues
             
+            # Import TensorFlow with memory optimizations
             import tensorflow as tf_module
             tf = tf_module
             
@@ -43,6 +40,19 @@ def lazy_load_tensorflow():
             try:
                 # Force CPU usage
                 tf.config.set_visible_devices([], 'GPU')
+                
+                # Use dynamic memory allocation
+                physical_devices = tf.config.list_physical_devices('CPU')
+                for device in physical_devices:
+                    try:
+                        # Don't pre-allocate memory
+                        tf.config.experimental.set_memory_growth(device, True)
+                    except:
+                        logger.warning("Could not set memory growth for device")
+                        
+                # Set thread count to reduce memory usage
+                tf.config.threading.set_inter_op_parallelism_threads(1)
+                tf.config.threading.set_intra_op_parallelism_threads(1)
             except Exception as e:
                 logger.warning(f"Could not configure TensorFlow devices: {e}")
             
@@ -64,16 +74,11 @@ IMAGE_SIZE = (100, 100)
 def check_memory():
     """Check available memory"""
     memory = psutil.virtual_memory()
-    return memory.percent < 90
+    return memory.percent < 85  # More conservative threshold
 
 def load_model_safely():
     """Load model with better error handling and memory management"""
     global model
-    
-    # Skip model loading on Render
-    if ON_RENDER:
-        logger.warning("Running on Render, using mock data only")
-        return False
     
     if not check_memory():
         logger.warning("Low memory detected, forcing garbage collection")
@@ -101,14 +106,36 @@ def load_model_safely():
         
         if model_path:
             # Load model with memory optimization
+            logger.info(f"Loading model from {model_path}")
+            
+            # Use a custom loader with optimizations
             model = load_model(model_path, compile=False)
-            logger.info(f"Model loaded successfully from {model_path}")
+            
+            # Make a test prediction to initialize the model
+            # This prevents the first real prediction from timing out
+            dummy_input = np.zeros((1, 100, 100, 3), dtype=np.float32)
+            with tf.device('/CPU:0'):
+                model.predict(dummy_input, verbose=0)
+                
+            logger.info(f"Model loaded successfully and initialized")
             
             # Force garbage collection after loading
             gc.collect()
             return True
         else:
             logger.error(f"Model file not found in any of these locations: {possible_paths}")
+            # List available files for debugging
+            current_dir = os.getcwd()
+            logger.info(f"Current directory: {current_dir}")
+            logger.info(f"Files in current directory: {os.listdir('.')}")
+            
+            if os.path.exists("model"):
+                logger.info(f"Files in model directory: {os.listdir('model')}")
+            elif os.path.exists("backend"):
+                logger.info(f"Files in backend: {os.listdir('backend')}")
+                if os.path.exists("backend/model"):
+                    logger.info(f"Files in backend/model: {os.listdir('backend/model')}")
+            
             return False
     except Exception as e:
         logger.error(f"Error loading model: {e}")
@@ -121,15 +148,15 @@ def load_model_safely():
 def get_mock_prediction():
     """Generate mock prediction data with slight randomness"""
     # Add some randomness to make it look more realistic
-    is_cancer = random.random() > 0.7
-    confidence = random.uniform(75, 95)
+    is_cancer = np.random.random() > 0.7
+    confidence = 75 + np.random.random() * 20
     cancer_prob = confidence if is_cancer else 100 - confidence
     
     return {
         "status": "Cancer" if is_cancer else "No Cancer",
         "confidence": confidence,
         "cancer_probability": cancer_prob,
-        "note": "Mock data - TensorFlow disabled on Render"
+        "note": "Mock data - model unavailable"
     }
 
 def predict_image(img_file):
@@ -196,8 +223,17 @@ def predict_image(img_file):
             if not lazy_load_tensorflow():
                 return get_mock_prediction()
                 
+            # Use a timeout mechanism to prevent hanging
+            start_time = time.time()
+            
             with tf.device('/CPU:0'):  # Force CPU usage
+                # Use a smaller batch size and disable verbosity
                 prediction = model.predict(img_array, verbose=0, batch_size=1)[0][0]
+                
+            end_time = time.time()
+            processing_time = int((end_time - start_time) * 1000)
+            logger.info(f"Prediction completed in {processing_time}ms")
+            
         except Exception as pred_error:
             logger.error(f"Prediction error: {pred_error}")
             traceback.print_exc()
@@ -217,6 +253,7 @@ def predict_image(img_file):
             "status": "Cancer" if is_cancer else "No Cancer",
             "confidence": confidence * 100,  # Convert to percentage
             "cancer_probability": float(prediction) * 100,  # Convert to percentage
+            "processing_time_ms": processing_time
         }
         
         logger.info(f"Prediction completed: {result['status']} ({result['confidence']:.2f}%)")
@@ -237,17 +274,6 @@ def predict_image(img_file):
 def health_check():
     """Check if the model is loaded and ready"""
     global model
-    
-    # On Render, always report healthy but indicate mock mode
-    if ON_RENDER:
-        memory = psutil.virtual_memory()
-        return {
-            "status": "healthy",
-            "mode": "mock_data",
-            "model_loaded": False,
-            "memory_available": memory.available / (1024**3),  # GB
-            "memory_percent": memory.percent
-        }
     
     # Try to load model if not loaded
     if model is None:

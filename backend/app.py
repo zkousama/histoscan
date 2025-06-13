@@ -6,6 +6,12 @@ import os
 import gc
 import psutil
 import traceback
+import threading
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -31,6 +37,24 @@ def after_request(response):
 predict_image = None
 health_check = None
 
+# Background model loading
+model_loaded = False
+model_loading = False
+
+def background_load_model():
+    """Load model in background thread"""
+    global model_loaded, model_loading
+    try:
+        from predict import load_model_safely
+        model_loading = True
+        success = load_model_safely()
+        model_loaded = success
+        model_loading = False
+        logger.info(f"Background model loading completed: {'success' if success else 'failed'}")
+    except Exception as e:
+        logger.error(f"Error in background model loading: {e}")
+        model_loading = False
+
 def load_predict_functions():
     """Lazy load predict functions to reduce memory usage"""
     global predict_image, health_check
@@ -39,8 +63,14 @@ def load_predict_functions():
             from predict import predict_image as pi, health_check as hc
             predict_image = pi
             health_check = hc
+            
+            # Start background model loading if not already done
+            global model_loaded, model_loading
+            if not model_loaded and not model_loading:
+                threading.Thread(target=background_load_model).start()
+                
         except Exception as e:
-            print(f"Error loading predict functions: {e}")
+            logger.error(f"Error loading predict functions: {e}")
             traceback.print_exc()
             raise
 
@@ -66,9 +96,9 @@ def predict():
     
     # Check memory before processing
     memory_percent = psutil.virtual_memory().percent
-    if memory_percent > 85:
+    if memory_percent > 90:
         gc.collect()  # Force garbage collection
-        if psutil.virtual_memory().percent > 90:
+        if psutil.virtual_memory().percent > 95:
             return jsonify({
                 "error": "Server memory too high, please try again later",
                 "memory_usage": f"{memory_percent:.1f}%"
@@ -98,7 +128,8 @@ def predict():
         result = predict_image(file)
         end_time = time.time()
 
-        result["processing_time_ms"] = int((end_time - start_time) * 1000)
+        if "processing_time_ms" not in result:
+            result["processing_time_ms"] = int((end_time - start_time) * 1000)
         
         # Force garbage collection after prediction
         gc.collect()
@@ -109,7 +140,7 @@ def predict():
         # Force cleanup on error
         gc.collect()
         error_msg = f"Prediction failed: {str(e)}"
-        print(f"ERROR: {error_msg}")
+        logger.error(f"ERROR: {error_msg}")
         traceback.print_exc()  # Print full traceback for debugging
         return jsonify({"error": error_msg}), 500
 
@@ -120,9 +151,14 @@ def health():
         # Just check if the server is running
         memory_info = psutil.virtual_memory()
         
+        # Check if model is loaded in background
+        global model_loaded, model_loading
+        
         return jsonify({
             "status": "healthy", 
             "message": "Backend is running",
+            "model_loaded": model_loaded,
+            "model_loading": model_loading,
             "memory_usage_percent": memory_info.percent,
             "memory_available_gb": memory_info.available / (1024**3),
             "memory_total_gb": memory_info.total / (1024**3)
