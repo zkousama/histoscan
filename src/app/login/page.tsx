@@ -13,7 +13,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -55,7 +54,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md p-8 shadow-lg">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="text-3xl font-bold text-blue-600 mb-2">HISTOSCAN</div>
+          <div className="text-3xl font-bold text-blue-600 mb-2">Histoscan</div>
           <div className="w-16 h-1 bg-blue-600 mx-auto rounded"></div>
         </div>
 
@@ -114,21 +113,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Remember Me */}
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="remember"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              disabled={loading}
-            />
-            <Label htmlFor="remember" className="text-sm text-gray-600">
-              ✓ Se souvenir de moi
-            </Label>
-          </div>
-
           {/* Divider */}
           <div className="border-t border-gray-200"></div>
 
@@ -147,23 +131,12 @@ export default function LoginPage() {
               'CONNEXION'
             )}
           </Button>
-
-          {/* Forgot Password */}
-          <div className="text-center">
-            <button
-              type="button"
-              className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
-              onClick={() => alert('Fonctionnalité à implémenter')}
-            >
-              Mot de passe oublié ?
-            </button>
-          </div>
         </div>
 
         {/* Footer */}
         <div className="mt-8 text-center text-xs text-gray-500">
           <p>Système sécurisé de diagnostic médical</p>
-          <p className="mt-1">© 2025 HISTOSCAN - Tous droits réservés</p>
+          <p className="mt-1">© 2025 Histoscan - Tous droits réservés</p>
         </div>
       </Card>
     </div>

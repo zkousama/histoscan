@@ -15,13 +15,13 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "HISTOSCAN - Diagnostic IA pour Mammographies",
+  title: "Histoscan - Diagnostic IA pour Mammographies",
   description:
     "Système intelligent de diagnostic pour l'analyse de mammographies utilisant l'intelligence artificielle",
   keywords: "mammographie, diagnostic, IA, cancer, médical, histoscan",
-  authors: [{ name: "HISTOSCAN Team" }],
-  creator: "HISTOSCAN",
-  publisher: "HISTOSCAN",
+  authors: [{ name: "Histoscan Team" }],
+  creator: "Histoscan",
+  publisher: "Histoscan",
   robots: "noindex, nofollow", // Private medical application
   viewport: "width=device-width, initial-scale=1",
   manifest: "/manifest.json",
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "HISTOSCAN",
+    title: "Histoscan",
   },
 }
 

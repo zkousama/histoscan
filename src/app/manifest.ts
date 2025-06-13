@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next"
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "HISTOSCAN - Diagnostic IA pour Mammographies",
-    short_name: "HISTOSCAN",
+    name: "Histoscan - Diagnostic IA pour Mammographies",
+    short_name: "Histoscan",
     description:
       "Système intelligent de diagnostic pour l'analyse de mammographies utilisant l'intelligence artificielle",
     start_url: "/",

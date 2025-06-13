@@ -29,7 +29,7 @@ export const generateResultPDF = async (result: ResultData): Promise<Blob> => {
   // Add header
   doc.setFontSize(22)
   doc.setTextColor(0, 51, 153) // Blue color for header
-  doc.text("HISTOSCAN", 105, 20, { align: "center" })
+  doc.text("Histoscan", 105, 20, { align: "center" })
 
   doc.setFontSize(16)
   doc.setTextColor(0, 0, 0)
@@ -114,7 +114,7 @@ export const generateResultPDF = async (result: ResultData): Promise<Blob> => {
     280,
     { align: "center" },
   )
-  doc.text("© 2025 HISTOSCAN - Tous droits réservés", 105, 285, { align: "center" })
+  doc.text("© 2025 Histoscan - Tous droits réservés", 105, 285, { align: "center" })
 
   return doc.output("blob")
 }

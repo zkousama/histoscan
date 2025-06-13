@@ -6,10 +6,7 @@ histoscan
 │  ├─ model
 │  │  └─ best_cancer_model_small.h5
 │  ├─ predict.py
-│  ├─ debug.py
 │  ├─ requirements.txt
-│  ├─ .python-version
-│  ├─ .runtime.txt
 │  ├─ venv
 │  └─ __pycache__
 ├─ components.json
@@ -70,7 +67,5 @@ histoscan
 │     ├─ pdf-generator.ts
 │     ├─ supabase.ts
 │     └─ utils.ts
-├─  tsconfig.json
-└─  render.yaml
-
+└─  tsconfig.json
 ```

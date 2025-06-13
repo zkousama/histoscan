@@ -65,7 +65,7 @@ export default function Dashboard() {
       <PageContainer>
         <PageTitle
           title="Tableau de bord"
-          description="Bienvenue sur votre tableau de bord HISTOSCAN"
+          description="Bienvenue sur votre tableau de bord Histoscan"
           actions={
             <Button
               onClick={() => router.push("/upload")}
