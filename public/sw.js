@@ -1,4 +1,4 @@
-const CACHE_NAME = "histoscan-cache-v1"
+const CACHE_NAME = "histoscan-cache-v2"
 const urlsToCache = [
   "/",
   "/login",
@@ -13,36 +13,73 @@ const urlsToCache = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(urlsToCache)
+      console.log("Opened cache")
+      // Use individual cache.add calls instead of addAll to prevent failures
+      return Promise.all(
+        urlsToCache.map((url) => {
+          return cache.add(url).catch((err) => {
+            console.error("Failed to cache:", url, err)
+            // Continue even if one URL fails
+            return Promise.resolve()
+          })
+        }),
+      )
     }),
   )
 })
 
 self.addEventListener("fetch", (event) => {
+  // Skip cross-origin requests and API calls
+  if (
+    event.request.url.includes("/api/") ||
+    event.request.url.includes("supabase") ||
+    event.request.url.includes("histoscan.onrender.com")
+  ) {
+    return
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       // Cache hit - return response
       if (response) {
         return response
       }
-      return fetch(event.request).then((response) => {
-        // Check if we received a valid response
-        if (!response || response.status !== 200 || response.type !== "basic") {
-          return response
-        }
 
-        // Clone the response
-        const responseToCache = response.clone()
+      // Clone the request
+      const fetchRequest = event.request.clone()
 
-        caches.open(CACHE_NAME).then((cache) => {
-          // Don't cache API requests
-          if (!event.request.url.includes("/api/") && !event.request.url.includes("supabase")) {
-            cache.put(event.request, responseToCache)
+      return fetch(fetchRequest)
+        .then((response) => {
+          // Check if we received a valid response
+          if (!response || response.status !== 200 || response.type !== "basic") {
+            return response
           }
-        })
 
-        return response
-      })
+          // Clone the response
+          const responseToCache = response.clone()
+
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => {
+              cache.put(event.request, responseToCache)
+            })
+            .catch((err) => {
+              console.error("Failed to cache response:", err)
+            })
+
+          return response
+        })
+        .catch((error) => {
+          console.error("Fetch failed:", error)
+          // Return any cached response or a fallback
+          return (
+            caches.match("/") ||
+            new Response("Network error occurred", {
+              status: 408,
+              headers: { "Content-Type": "text/plain" },
+            })
+          )
+        })
     }),
   )
 })
@@ -56,6 +93,7 @@ self.addEventListener("activate", (event) => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
             return caches.delete(cacheName)
           }
+          return Promise.resolve()
         }),
       )
     }),

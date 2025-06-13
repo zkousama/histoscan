@@ -18,8 +18,6 @@ services:
         value: "2"
       - key: PYTHONUNBUFFERED
         value: "1"
-      - key: TF_MEMORY_ALLOCATION
-        value: "2GB"
     disk:
       name: histoscan-data
       mountPath: /opt/render/project/src/model

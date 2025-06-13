@@ -22,29 +22,26 @@ def lazy_load_tensorflow():
     global tf, load_model
     if tf is None:
         try:
-            # Set memory limit before importing TensorFlow
-            os.environ['TF_MEMORY_ALLOCATION'] = '2GB'
+            # Set environment variables before importing TensorFlow
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Reduce TF logging
             
             import tensorflow as tf_module
             tf = tf_module
             
             # Configure TensorFlow for memory efficiency
-            physical_devices = tf.config.list_physical_devices('CPU')
-            for device in physical_devices:
-                try:
-                    tf.config.experimental.set_memory_growth(device, True)
-                except:
-                    pass
-                    
-            # Limit TensorFlow memory usage
-            tf.config.set_logical_device_configuration(
-                physical_devices[0],
-                [tf.config.LogicalDeviceConfiguration(memory_limit=1024)]
-            )
-            
-            # Force CPU usage
-            tf.config.set_visible_devices([], 'GPU')
+            try:
+                # Force CPU usage
+                tf.config.set_visible_devices([], 'GPU')
+                
+                # Enable memory growth but don't set explicit limits
+                physical_devices = tf.config.list_physical_devices('CPU')
+                for device in physical_devices:
+                    try:
+                        tf.config.experimental.set_memory_growth(device, True)
+                    except:
+                        logger.warning("Could not set memory growth for device")
+            except Exception as e:
+                logger.warning(f"Could not configure TensorFlow devices: {e}")
             
             from tensorflow.keras.models import load_model as lm
             load_model = lm

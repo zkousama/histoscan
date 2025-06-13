@@ -20,6 +20,7 @@ CORS(app,
 @app.after_request
 def after_request(response):
     """Add CORS headers to all responses"""
+    # Ensure CORS headers are set for all responses
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
@@ -60,7 +61,8 @@ def home():
 def predict():
     # Handle preflight OPTIONS request
     if request.method == "OPTIONS":
-        return "", 200  # Return empty response with 200 OK for OPTIONS
+        response = jsonify({"status": "ok"})
+        return response
     
     # Check memory before processing
     memory_percent = psutil.virtual_memory().percent

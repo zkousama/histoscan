@@ -25,6 +25,15 @@ interface Patient {
   last_consultation: string
 }
 
+// Define the API response type
+interface PredictionResponse {
+  status: string
+  confidence: number
+  cancer_probability: number
+  processing_time_ms?: number
+  note?: string
+}
+
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [activeTab, setActiveTab] = useState("new")
@@ -184,41 +193,55 @@ export default function UploadPage() {
 
       // Add retry logic for the API call
       let retries = 3
-      let response = null
+      let response: PredictionResponse | null = null
       let lastError = null
 
       while (retries > 0 && !response) {
         try {
-          response = await fetch(`${apiUrl}/predict`, {
-            method: "POST",
-            body: formData,
-            // Add explicit CORS mode
-            mode: "cors",
-            headers: {
-              // Don't set Content-Type with FormData as browser will set it with boundary
-              Accept: "application/json",
-            },
-          })
+          // Use XMLHttpRequest instead of fetch for better CORS handling
+          response = await new Promise<PredictionResponse>((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+            xhr.open("POST", `${apiUrl}/predict`, true)
+            xhr.setRequestHeader("Accept", "application/json")
 
-          if (!response.ok) {
-            const errorText = await response.text()
-            throw new Error(`API error: ${response.status} - ${errorText || "Unknown error"}`)
-          }
+            xhr.onload = function () {
+              if (this.status >= 200 && this.status < 300) {
+                try {
+                  const responseData = JSON.parse(xhr.response) as PredictionResponse
+                  resolve(responseData)
+                } catch (parseError) {
+                  reject(new Error(`Failed to parse response: ${parseError}`))
+                }
+              } else {
+                reject(new Error(`API error: ${this.status} - ${xhr.statusText || "Unknown error"}`))
+              }
+            }
+
+            xhr.onerror = () => {
+              reject(new Error("Network error occurred"))
+            }
+
+            xhr.ontimeout = () => {
+              reject(new Error("Request timed out"))
+            }
+
+            xhr.timeout = 30000 // 30 seconds timeout
+            xhr.send(formData)
+          })
 
           break
         } catch (err: any) {
           lastError = err
           retries--
+          console.error(`API call attempt failed (${3 - retries}/3):`, err)
           // Wait before retrying (exponential backoff)
           await new Promise((resolve) => setTimeout(resolve, 1000 * (3 - retries)))
         }
       }
 
-      if (!response || !response.ok) {
+      if (!response) {
         throw new Error(lastError?.message || "Failed to connect to the prediction API after multiple attempts")
       }
-
-      const result = await response.json()
 
       // 4. Save result to database
       const finalPatientData =
@@ -236,9 +259,9 @@ export default function UploadPage() {
         sex: finalPatientData.sex || null,
         age: finalPatientData.age ? Number.parseInt(finalPatientData.age) : null,
         consultation_date: format(consultationDate, "yyyy-MM-dd"),
-        prediction: result.status,
-        confidence: result.confidence,
-        cancer_probability: result.cancer_probability,
+        prediction: response.status,
+        confidence: response.confidence,
+        cancer_probability: response.cancer_probability,
         image_url: imageUrl,
       })
 
@@ -250,7 +273,7 @@ export default function UploadPage() {
       localStorage.setItem(
         "last_result",
         JSON.stringify({
-          ...result,
+          ...response,
           imageUrl,
           patient_id: finalPatientData.patient_id,
           sex: finalPatientData.sex,
