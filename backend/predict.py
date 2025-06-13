@@ -5,17 +5,36 @@ from tensorflow.keras.preprocessing import image
 from PIL import Image
 import io
 import os
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 MODEL_PATH = os.getenv("MODEL_PATH", "model/best_cancer_model_small.h5")
 IMAGE_SIZE = (100, 100)
 
-# Load model once when module is imported
-try:
-    model = load_model(MODEL_PATH)
-    print(f"Model loaded successfully from {MODEL_PATH}")
-except Exception as e:
-    print(f"Error loading model: {e}")
-    model = None
+# Global model variable
+model = None
+
+def load_model_safely():
+    """Load model with better error handling"""
+    global model
+    try:
+        if os.path.exists(MODEL_PATH):
+            model = load_model(MODEL_PATH)
+            logger.info(f"Model loaded successfully from {MODEL_PATH}")
+            return True
+        else:
+            logger.error(f"Model file not found at {MODEL_PATH}")
+            return False
+    except Exception as e:
+        logger.error(f"Error loading model: {e}")
+        model = None
+        return False
+
+# Try to load model when module is imported
+load_model_safely()
 
 def predict_image(img_file):
     """
@@ -27,8 +46,13 @@ def predict_image(img_file):
     Returns:
         dict: Prediction results
     """
+    global model
+    
+    # Try to load model if not already loaded
     if model is None:
-        raise Exception("Model not loaded. Please check the model path.")
+        logger.warning("Model not loaded, attempting to reload...")
+        if not load_model_safely():
+            raise Exception("Model could not be loaded. Please check the model file.")
     
     try:
         # Handle Flask FileStorage object
@@ -55,8 +79,12 @@ def predict_image(img_file):
         img_array = np.array(img) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
         
-        # Make prediction
-        prediction = model.predict(img_array, verbose=0)[0][0]
+        # Make prediction with timeout protection
+        try:
+            prediction = model.predict(img_array, verbose=0)[0][0]
+        except Exception as pred_error:
+            logger.error(f"Prediction error: {pred_error}")
+            raise Exception(f"Model prediction failed: {str(pred_error)}")
         
         # Determine status and confidence
         is_cancer = prediction >= 0.5
@@ -68,16 +96,26 @@ def predict_image(img_file):
             "cancer_probability": float(prediction) * 100,  # Convert to percentage
         }
         
+        logger.info(f"Prediction completed: {result['status']} ({result['confidence']:.2f}%)")
         return result
         
     except Exception as e:
-        print(f"Error in predict_image: {e}")
+        logger.error(f"Error in predict_image: {e}")
         raise Exception(f"Image prediction failed: {str(e)}")
 
 def health_check():
     """Check if the model is loaded and ready"""
+    global model
+    
+    # Try to load model if not loaded
+    if model is None:
+        model_loaded = load_model_safely()
+    else:
+        model_loaded = True
+    
     return {
-        "model_loaded": model is not None,
+        "model_loaded": model_loaded,
         "model_path": MODEL_PATH,
+        "model_exists": os.path.exists(MODEL_PATH),
         "image_size": IMAGE_SIZE
     }

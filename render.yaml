@@ -1,9 +1,10 @@
+# File: render.yaml
 services:
   - type: web
     name: histoscan-api
     env: python
     buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: cd backend && gunicorn app:app
+    startCommand: cd backend && gunicorn --bind 0.0.0.0:$PORT --timeout 300 --workers 1 --worker-class sync app:app
     envVars:
       - key: SUPABASE_URL
         value: https://sdtnxvgofugmiouvchtf.supabase.co
@@ -11,3 +12,5 @@ services:
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkdG54dmdvZnVnbWlvdXZjaHRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NjAwMDQsImV4cCI6MjA2NTMzNjAwNH0.ulKFXnzm0HHaQ3pY_A-uToAUrNytyo7xaE42BV4D5kM
       - key: PYTHON_VERSION
         value: "3.10.13"
+      - key: MODEL_PATH
+        value: "model/best_cancer_model_small.h5"
