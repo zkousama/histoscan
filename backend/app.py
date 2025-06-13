@@ -83,7 +83,8 @@ def home():
         "endpoints": {
             "/health": "GET - Health check",
             "/predict": "POST - Image prediction",
-            "/memory": "GET - Memory status"
+            "/memory": "GET - Memory status",
+            "/check-model": "GET - Check model file existence"
         }
     })
 
@@ -96,9 +97,9 @@ def predict():
     
     # Check memory before processing
     memory_percent = psutil.virtual_memory().percent
-    if memory_percent > 90:
+    if memory_percent > 95:
         gc.collect()  # Force garbage collection
-        if psutil.virtual_memory().percent > 95:
+        if psutil.virtual_memory().percent > 98:
             return jsonify({
                 "error": "Server memory too high, please try again later",
                 "memory_usage": f"{memory_percent:.1f}%"
@@ -194,6 +195,47 @@ def cleanup():
     try:
         gc.collect()
         return jsonify({"message": "Cleanup completed"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Add an endpoint to check model file existence
+@app.route("/check-model", methods=["GET"])
+def check_model():
+    """Check if model file exists"""
+    try:
+        # Check multiple possible paths
+        possible_paths = [
+            os.getenv("MODEL_PATH", "model/best_cancer_model_small.h5"),
+            "model/best_cancer_model_small.h5",
+            "backend/model/best_cancer_model_small.h5",
+            os.path.join(os.getcwd(), "model/best_cancer_model_small.h5")
+        ]
+        
+        found_paths = []
+        for path in possible_paths:
+            if os.path.exists(path):
+                found_paths.append(path)
+        
+        # List directories for debugging
+        current_dir = os.getcwd()
+        directories = {}
+        
+        directories["current_dir"] = current_dir
+        directories["current_dir_files"] = os.listdir('.')
+        
+        if os.path.exists("model"):
+            directories["model_dir_files"] = os.listdir('model')
+        
+        if os.path.exists("backend"):
+            directories["backend_dir_files"] = os.listdir('backend')
+            if os.path.exists("backend/model"):
+                directories["backend_model_dir_files"] = os.listdir('backend/model')
+        
+        return jsonify({
+            "possible_paths": possible_paths,
+            "found_paths": found_paths,
+            "directories": directories
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

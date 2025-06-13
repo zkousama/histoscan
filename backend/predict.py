@@ -8,7 +8,6 @@ import io
 import psutil
 import traceback
 import time
-import random
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -18,9 +17,6 @@ logger = logging.getLogger(__name__)
 model = None
 tf = None
 load_model = None
-
-# Check if we're running on Render
-ON_RENDER = os.environ.get('RENDER', False)
 
 def lazy_load_tensorflow():
     """Lazy load TensorFlow to reduce memory usage"""
@@ -84,10 +80,12 @@ def load_model_safely():
         logger.warning("Low memory detected, forcing garbage collection")
         gc.collect()
         if not check_memory():
-            raise Exception("Insufficient memory to load model")
+            logger.error("Insufficient memory to load model")
+            return False
     
     try:
         if not lazy_load_tensorflow():
+            logger.error("Failed to load TensorFlow")
             return False
         
         # Check multiple possible paths
@@ -145,20 +143,6 @@ def load_model_safely():
         gc.collect()
         return False
 
-def get_mock_prediction():
-    """Generate mock prediction data with slight randomness"""
-    # Add some randomness to make it look more realistic
-    is_cancer = np.random.random() > 0.7
-    confidence = 75 + np.random.random() * 20
-    cancer_prob = confidence if is_cancer else 100 - confidence
-    
-    return {
-        "status": "Cancer" if is_cancer else "No Cancer",
-        "confidence": confidence,
-        "cancer_probability": cancer_prob,
-        "note": "Mock data - model unavailable"
-    }
-
 def predict_image(img_file):
     """
     Predict cancer from image file with memory optimization.
@@ -171,27 +155,19 @@ def predict_image(img_file):
     """
     global model
     
-    # Always use mock data on Render
-    if ON_RENDER:
-        # Add a small delay to simulate processing
-        time.sleep(0.5)
-        return get_mock_prediction()
-    
     # Check memory before processing
     if not check_memory():
         gc.collect()
         if not check_memory():
-            # If still low on memory, return mock data instead of failing
-            logger.warning("Insufficient memory for prediction, returning mock data")
-            return get_mock_prediction()
+            # If still low on memory, log error and continue with best effort
+            logger.warning("Low memory for prediction, continuing with best effort")
     
     # Try to load model if not already loaded
     if model is None:
         logger.warning("Model not loaded, attempting to reload...")
         if not load_model_safely():
-            # If model can't be loaded, return mock data
-            logger.warning("Model could not be loaded, returning mock data")
-            return get_mock_prediction()
+            logger.error("Failed to load model for prediction")
+            raise Exception("Failed to load the prediction model. Please check server logs.")
     
     try:
         # Handle Flask FileStorage object
@@ -221,7 +197,7 @@ def predict_image(img_file):
         # Make prediction with memory optimization
         try:
             if not lazy_load_tensorflow():
-                return get_mock_prediction()
+                raise Exception("TensorFlow not available for prediction")
                 
             # Use a timeout mechanism to prevent hanging
             start_time = time.time()
@@ -237,8 +213,7 @@ def predict_image(img_file):
         except Exception as pred_error:
             logger.error(f"Prediction error: {pred_error}")
             traceback.print_exc()
-            # Return mock data on prediction error
-            return get_mock_prediction()
+            raise Exception(f"Error during image prediction: {str(pred_error)}")
         finally:
             # Clean up memory immediately
             del img_array
@@ -268,8 +243,8 @@ def predict_image(img_file):
         traceback.print_exc()
         # Clean up on error
         gc.collect()
-        # Return mock data on error
-        return get_mock_prediction()
+        # Propagate the error instead of returning mock data
+        raise Exception(f"Failed to process image: {str(e)}")
 
 def health_check():
     """Check if the model is loaded and ready"""
