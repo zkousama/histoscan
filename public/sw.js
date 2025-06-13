@@ -1,20 +1,11 @@
-const CACHE_NAME = "histoscan-cache-v2"
-const urlsToCache = [
-  "/",
-  "/login",
-  "/dashboard",
-  "/history",
-  "/upload",
-  "/result",
-  "/icons/icon-192x192.png",
-  "/icons/icon-512x512.png",
-]
+const CACHE_NAME = "histoscan-cache-v3"
+const urlsToCache = ["/", "/login", "/dashboard", "/history", "/upload", "/result"]
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log("Opened cache")
-      // Use individual cache.add calls instead of addAll to prevent failures
+      // Don't try to cache icons that are failing
       return Promise.all(
         urlsToCache.map((url) => {
           return cache.add(url).catch((err) => {
@@ -29,11 +20,12 @@ self.addEventListener("install", (event) => {
 })
 
 self.addEventListener("fetch", (event) => {
-  // Skip cross-origin requests and API calls
+  // Skip cross-origin requests, API calls, and supabase calls
   if (
     event.request.url.includes("/api/") ||
     event.request.url.includes("supabase") ||
-    event.request.url.includes("histoscan.onrender.com")
+    event.request.url.includes("histoscan.onrender.com") ||
+    event.request.url.includes("icons/icon-")
   ) {
     return
   }
