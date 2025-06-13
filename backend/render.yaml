@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: histoscan-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SUPABASE_URL
+        value: https://sdtnxvgofugmiouvchtf.supabase.co
+      - key: SUPABASE_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkdG54dmdvZnVnbWlvdXZjaHRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NjAwMDQsImV4cCI6MjA2NTMzNjAwNH0.ulKFXnzm0HHaQ3pY_A-uToAUrNytyo7xaE42BV4D5kM
