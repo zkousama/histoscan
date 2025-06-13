@@ -1,23 +1,35 @@
 # File: backend/app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from predict import predict_image, health_check
 import time
 import os
+import gc
 
 app = Flask(__name__)
 
-# Configure CORS for production - allow all origins for now
+# Configure CORS for production
 CORS(app, 
-     origins=["*"],  # Allow all origins for production
+     origins=["*"],
      methods=["GET", "POST", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Origin"])
+
+# Import predict functions after Flask app creation to save memory
+from predict import predict_image, health_check
+
+@app.after_request
+def after_request(response):
+    """Add CORS headers to all responses"""
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    return response
 
 @app.route("/", methods=["GET"])
 def home():
     """Root endpoint to prevent 404s"""
     return jsonify({
         "message": "HistoScan API is running",
+        "version": "1.0.0",
         "endpoints": {
             "/health": "GET - Health check",
             "/predict": "POST - Image prediction"
@@ -28,11 +40,7 @@ def home():
 def predict():
     # Handle preflight OPTIONS request
     if request.method == "OPTIONS":
-        response = jsonify({"status": "ok"})
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-        return response
+        return jsonify({"status": "ok"})
     
     if "image" not in request.files:
         return jsonify({"error": "No image provided"}), 400
@@ -49,33 +57,39 @@ def predict():
 
         result["processing_time_ms"] = int((end_time - start_time) * 1000)
         
-        response = jsonify(result)
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        return response
+        # Force garbage collection after prediction
+        gc.collect()
+        
+        return jsonify(result)
     
     except Exception as e:
-        error_response = jsonify({"error": f"Prediction failed: {str(e)}"})
-        error_response.headers.add("Access-Control-Allow-Origin", "*")
-        return error_response, 500
+        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 @app.route("/health", methods=["GET"])
 def health():
     try:
         model_status = health_check()
-        response = jsonify({
+        return jsonify({
             "status": "healthy", 
             "message": "Backend is running",
             **model_status
         })
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        return response
     except Exception as e:
-        error_response = jsonify({
+        return jsonify({
             "status": "unhealthy",
             "error": str(e)
-        })
-        error_response.headers.add("Access-Control-Allow-Origin", "*")
-        return error_response, 500
+        }), 500
+
+# Add a simple memory check endpoint
+@app.route("/memory", methods=["GET"])
+def memory_info():
+    import psutil
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info()
+    return jsonify({
+        "memory_usage_mb": memory_info.rss / 1024 / 1024,
+        "memory_percent": process.memory_percent()
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

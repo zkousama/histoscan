@@ -1,32 +1,53 @@
 # File: backend/predict.py
 import numpy as np
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
-from PIL import Image
-import io
 import os
 import logging
+import gc
+from PIL import Image
+import io
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = os.getenv("MODEL_PATH", "model/best_cancer_model_small.h5")
+# Defer TensorFlow import to reduce memory usage
+import tensorflow as tf
+# Configure TensorFlow for memory efficiency
+tf.config.experimental.enable_memory_growth = True
+tf.config.set_visible_devices([], 'GPU')  # Force CPU usage on free tier
+
+from tensorflow.keras.models import load_model
+
+MODEL_PATH = os.getenv("MODEL_PATH", "backend/model/best_cancer_model_small.h5")
 IMAGE_SIZE = (100, 100)
 
 # Global model variable
 model = None
 
 def load_model_safely():
-    """Load model with better error handling"""
+    """Load model with better error handling and memory management"""
     global model
     try:
         if os.path.exists(MODEL_PATH):
-            model = load_model(MODEL_PATH)
+            # Load model with memory optimization
+            model = load_model(MODEL_PATH, compile=False)
             logger.info(f"Model loaded successfully from {MODEL_PATH}")
+            
+            # Force garbage collection
+            gc.collect()
             return True
         else:
             logger.error(f"Model file not found at {MODEL_PATH}")
+            # List available files for debugging
+            current_dir = os.getcwd()
+            logger.info(f"Current directory: {current_dir}")
+            logger.info(f"Files in current directory: {os.listdir('.')}")
+            
+            if os.path.exists("backend"):
+                logger.info(f"Files in backend: {os.listdir('backend')}")
+                if os.path.exists("backend/model"):
+                    logger.info(f"Files in backend/model: {os.listdir('backend/model')}")
+            
             return False
     except Exception as e:
         logger.error(f"Error loading model: {e}")
@@ -38,7 +59,7 @@ load_model_safely()
 
 def predict_image(img_file):
     """
-    Predict cancer from image file.
+    Predict cancer from image file with memory optimization.
     
     Args:
         img_file: Flask FileStorage object or file-like object
@@ -73,18 +94,23 @@ def predict_image(img_file):
             img = img.convert('RGB')
         
         # Resize image
-        img = img.resize(IMAGE_SIZE)
+        img = img.resize(IMAGE_SIZE, Image.Resampling.LANCZOS)
         
         # Convert to array and normalize
-        img_array = np.array(img) / 255.0
+        img_array = np.array(img, dtype=np.float32) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
         
-        # Make prediction with timeout protection
+        # Make prediction with memory optimization
         try:
-            prediction = model.predict(img_array, verbose=0)[0][0]
+            with tf.device('/CPU:0'):  # Force CPU usage
+                prediction = model.predict(img_array, verbose=0, batch_size=1)[0][0]
         except Exception as pred_error:
             logger.error(f"Prediction error: {pred_error}")
             raise Exception(f"Model prediction failed: {str(pred_error)}")
+        finally:
+            # Clean up memory
+            del img_array
+            gc.collect()
         
         # Determine status and confidence
         is_cancer = prediction >= 0.5
@@ -117,5 +143,7 @@ def health_check():
         "model_loaded": model_loaded,
         "model_path": MODEL_PATH,
         "model_exists": os.path.exists(MODEL_PATH),
-        "image_size": IMAGE_SIZE
+        "image_size": IMAGE_SIZE,
+        "current_dir": os.getcwd(),
+        "tensorflow_version": tf.__version__
     }
