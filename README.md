@@ -7,6 +7,8 @@ histoscan
 │  │  └─ best_cancer_model_small.h5
 │  ├─ predict.py
 │  ├─ requirements.txt
+│  ├─ render.yaml
+│  ├─ .runtime.txt
 │  ├─ venv
 │  └─ __pycache__
 ├─ components.json
